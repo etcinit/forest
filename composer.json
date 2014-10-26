@@ -1,0 +1,19 @@
+{
+    "name": "eduard44/forest",
+    "require": {
+        "symfony/console": "2.5",
+        "alom/graphviz": "dev-master",
+        "symfony/process": "2.5.x"
+    },
+    "authors": [
+        {
+            "name": "Eduardo Trujillo",
+            "email": "ed@chromabits.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Chromabits\\": "src/Chromabits"
+        }
+    }
+}
