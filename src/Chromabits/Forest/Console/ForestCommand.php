@@ -35,7 +35,7 @@ class ForestCommand extends Command
 
         //$runner->renderGraph();
 
-        $runner->process(5000,10);
+        $runner->process(10000,20);
         //$runner->processRandomUnit(1);
 
         $runner->renderGraph();

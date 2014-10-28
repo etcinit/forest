@@ -231,4 +231,21 @@ class CutBranch extends Branch
             }
         }
     }
+
+    public function pickBest()
+    {
+        $options = [
+            1 => $this->tp1Vol,
+            2 => $this->tp2Vol,
+            3 => $this->tp3Vol
+        ];
+
+        $max = max($options);
+
+        foreach ($options as $tp => $vol) {
+            if ($vol == $max) {
+                $this->timePeriod = $tp;
+            }
+        }
+    }
 } 

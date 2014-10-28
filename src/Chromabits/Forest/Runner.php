@@ -26,6 +26,10 @@ class Runner
     protected $bestSolutionTotal = -1;
     protected $bestSolutionViolations = -1;
 
+    protected $bestSoFar = [];
+    protected $bestSoFarTotal = -1;
+    protected $bestSoFarViolations = -1;
+
     protected $attemptsPerNode = 3;
     protected $attempted = [];
 
@@ -149,9 +153,15 @@ class Runner
         return $totalVolume;
     }
 
-    public function renderGraph()
+    public function renderGraph($soFar = false)
     {
         $graph = new Digraph('G');
+
+        $collection = $this->cutBranches;
+
+        if ($soFar) {
+            $collection = $this->bestSoFar;
+        }
 
         foreach ($this->cutBranches as $cutBranch) {
             switch ($cutBranch->getTimePeriod()) {
@@ -183,6 +193,10 @@ class Runner
         $dot = new Process('dot -Tpng -o test.png');
         //$dot = new Process('dot');
 
+        if ($soFar) {
+            $dot = new Process('dot -Tpng -o sofar.png');
+        }
+
         $dot->setInput($gv);
 
         $dot->run();
@@ -193,6 +207,11 @@ class Runner
     public function process($iterations, $fixIterations, $pickIterations = 1)
     {
         for ($i = 0; $i < $iterations; $i++) {
+            // Try to fix leafs first
+            foreach ($this->getViolations(null) as $violation) {
+                $violation->pickBestIfLeaf();
+            }
+
             for ($j = 0; $j < $pickIterations; $j++) {
                 try {
                     $this->processRandomUnit($fixIterations);
@@ -225,6 +244,17 @@ class Runner
                     }
                 }
             } else {
+                $currentTotal = $this->getTotalVolume();
+
+                // If best so far keep
+                if ($this->bestSoFarTotal == -1 || $this->bestSoFarTotal > $currentTotal) {
+                    foreach ($this->cutBranches as $key => $cutBranch) {
+                        $this->bestSoFar[$key] = clone $cutBranch;
+                    }
+
+                    $this->bestSoFarTotal = $currentTotal;
+                }
+
                 // Revert
                 foreach ($this->bestSolution as $key => $cutBranch) {
                     $this->cutBranches[$key] = clone $cutBranch;
@@ -233,9 +263,10 @@ class Runner
 
             echo 'CURRENT: ' . $this->getTotalVolume() . "\n";
             echo 'Violations: ' . count($this->getViolations(null)) . "\n";
+            echo 'BEST SO FAR: ' . $this->bestSoFarTotal. "\n";
 
             if ($i % 20 == 0) {
-                $this->renderGraph();
+                $this->renderGraph(true);
             }
         }
 
@@ -245,7 +276,7 @@ class Runner
 
     public function pickUnitA()
     {
-        $violations = array_values($this->getViolations(null));
+        $violations = array_values($this->getViolations());
 
         if (count($violations) == count($this->attempted)) {
             echo 'Exhausted' . "\n";
@@ -266,10 +297,16 @@ class Runner
             return $unitA;
         }
 
+        if (count($violations) == 0) {
+            return -1;
+        }
+
+
         // Introduce a random change somewhere
         $unitAIndex = rand(1, (count($this->cutBranches)));
 
         //$this->cutBranches[$unitAIndex]->setRandomTimePeriod();
+        $this->cutBranches[$unitAIndex]->pickBest();
 
         return $this->cutBranches[$unitAIndex];
     }
@@ -278,6 +315,11 @@ class Runner
     {
         // Pick a random unit A
         $unitA = $this->pickUnitA();
+
+        if ($unitA === -1) {
+            echo 'No more violations: ' . $this->getTotalVolume() . "\n";
+            return;
+        }
 
         //echo 'Picked: ' . $unitA->getId() . "\n";
         //echo 'Volume before: ' . $this->getTotalVolume() . "\n";
@@ -335,7 +377,7 @@ class Runner
         $violations = [];
 
         foreach ($this->cutBranches as $cutBranch) {
-            if (!is_null($cutBranch) && $cutBranch == $except) {
+            if (!is_null($except) && $cutBranch == $except) {
                 continue;
             }
 
