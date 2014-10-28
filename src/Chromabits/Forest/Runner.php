@@ -24,6 +24,10 @@ class Runner
 
     protected $bestSolution = [];
     protected $bestSolutionTotal = -1;
+    protected $bestSolutionViolations = -1;
+
+    protected $attemptsPerNode = 3;
+    protected $attempted = [];
 
     public function parseInput($volumesFilename, $adFilename)
     {
@@ -58,6 +62,7 @@ class Runner
     protected function parseAdjacencyTable(array $adjacencyContent)
     {
         foreach ($adjacencyContent as $line) {
+            echo $line . "\n";
             $values = explode(',', $line);
 
             $id1 = $values[0];
@@ -67,8 +72,14 @@ class Runner
 
             $this->branches[$id2]->addNeighbor($this->branches[$id1]);
 
-            $this->adjacencyTable[$id1] = $id2;
+            if (!array_key_exists($id1, $this->adjacencyTable)) {
+                $this->adjacencyTable[$id1] = [];
+            }
+
+            $this->adjacencyTable[$id1][$id2] = true;
         }
+
+        print_r($this->adjacencyTable);
     }
 
     public function randomizedInit()
@@ -83,10 +94,12 @@ class Runner
         }
 
         // Recreate relationships
-        foreach ($this->adjacencyTable as $id1 => $id2) {
-            $this->cutBranches[$id1]->addNeighbor($this->cutBranches[$id2]);
+        foreach ($this->adjacencyTable as $id1 => $ids) {
+            foreach ($ids as $id2 => $value) {
+                $this->cutBranches[$id1]->addNeighbor($this->cutBranches[$id2]);
 
-            $this->cutBranches[$id2]->addNeighbor($this->cutBranches[$id1]);
+                $this->cutBranches[$id2]->addNeighbor($this->cutBranches[$id1]);
+            }
         }
     }
 
@@ -103,17 +116,35 @@ class Runner
 
             $totalVolume += $cutBranch->getTotal();
         }
-
-        echo 'TOTAL: ' . $totalVolume;
     }
 
     public function getTotalVolume()
     {
         $totalVolume = 0;
 
+        $totalTp1 = 0;
+        $totalTp2 = 0;
+        $totalTp3 = 0;
+
         foreach ($this->cutBranches as $cutBranch) {
-            $totalVolume += $cutBranch->getTotal();
+            switch ($cutBranch->getTimePeriod()) {
+                case 1:
+                    $totalTp1 += $cutBranch->getTotal();
+                    break;
+                case 2:
+                    $totalTp2 += $cutBranch->getTotal();
+                    break;
+                case 3:
+                    $totalTp3 += $cutBranch->getTotal();
+                    break;
+            }
         }
+
+        $totalTp1 = pow($totalTp1 - 34467, 2);
+        $totalTp2 = pow($totalTp2 - 34467, 2);
+        $totalTp3 = pow($totalTp3 - 34467, 2);
+
+        $totalVolume = $totalTp1 + $totalTp2 + $totalTp3;
 
         return $totalVolume;
     }
@@ -133,18 +164,24 @@ class Runner
                 case 3:
                     $color = 'green';
                     break;
+                default:
+                    $color = 'yellow';
+                    break;
             }
 
             $graph->node($cutBranch->getId(), ['color' => $color, 'shape' => 'circle']);
         }
 
-        foreach ($this->adjacencyTable as $id1 => $id2) {
-            $graph->edge([$id1, $id2]);
+        foreach ($this->adjacencyTable as $id1 => $ids) {
+            foreach ($ids as $id2 => $value) {
+                $graph->edge([$id1, $id2]);
+            }
         }
 
         $gv = $graph->render();
 
         $dot = new Process('dot -Tpng -o test.png');
+        //$dot = new Process('dot');
 
         $dot->setInput($gv);
 
@@ -153,43 +190,97 @@ class Runner
         echo $dot->getOutput();
     }
 
-    public function process($iterations, $fixIterations)
+    public function process($iterations, $fixIterations, $pickIterations = 1)
     {
         for ($i = 0; $i < $iterations; $i++) {
-            try {
-                $this->processRandomUnit($fixIterations);
-            } catch (Exception $e) {
+            for ($j = 0; $j < $pickIterations; $j++) {
+                try {
+                    $this->processRandomUnit($fixIterations);
+                } catch (Exception $e) {
 
+                }
             }
 
-            $currentTotal = $this->getTotalVolume();
+            // Try to fix leafs first
+            foreach ($this->getViolations(null) as $violation) {
+                $violation->pickBestIfLeaf();
+            }
 
-            if ($this->bestSolutionTotal == -1 || $currentTotal > $this->bestSolutionTotal) {
-                foreach ($this->cutBranches as $key => $cutBranch) {
-                    $this->bestSolution[$key] = clone $cutBranch;
+            if (count($this->getViolations()) == 0) {
+                $currentTotal = $this->getTotalVolume();
+
+                if ($this->bestSolutionTotal == -1 || $currentTotal < $this->bestSolutionTotal) {
+                    foreach ($this->cutBranches as $key => $cutBranch) {
+                        $this->bestSolution[$key] = clone $cutBranch;
+                    }
+
+                    $this->bestSolutionTotal = $currentTotal;
+                    $this->bestSolutionViolations = count($this->getViolations(null));
+
+                    echo 'BEST: ' . $currentTotal. "\n";
+                } else {
+                    // Revert
+                    foreach ($this->bestSolution as $key => $cutBranch) {
+                        $this->cutBranches[$key] = clone $cutBranch;
+                    }
                 }
-
-                $this->bestSolutionTotal = $currentTotal;
             } else {
                 // Revert
                 foreach ($this->bestSolution as $key => $cutBranch) {
                     $this->cutBranches[$key] = clone $cutBranch;
                 }
             }
+
+            echo 'CURRENT: ' . $this->getTotalVolume() . "\n";
+            echo 'Violations: ' . count($this->getViolations(null)) . "\n";
+
+            if ($i % 20 == 0) {
+                $this->renderGraph();
+            }
         }
 
-        echo 'BEST: ' . $this->getTotalVolume() . "\n";
+        echo 'Best: ' . $this->bestSolutionTotal . "\n";
+        echo 'Violations: ' . $this->bestSolutionViolations. "\n";
+    }
+
+    public function pickUnitA()
+    {
+        $violations = array_values($this->getViolations(null));
+
+        if (count($violations) == count($this->attempted)) {
+            echo 'Exhausted' . "\n";
+        }
+
+        // Bias towards violations
+        if (count($violations) > 0 && count($violations) == count($this->attempted) && false) {
+            $unitAIndex = rand(0, (count($violations) - 1));
+
+            $unitA = $violations[$unitAIndex];
+
+            if (array_key_exists($unitA->getId(), $this->attempted)) {
+                $this->attempted[$unitA->getId()] += 1;
+            } else {
+                $this->attempted[$unitA->getId()] = 1;
+            }
+
+            return $unitA;
+        }
+
+        // Introduce a random change somewhere
+        $unitAIndex = rand(1, (count($this->cutBranches)));
+
+        //$this->cutBranches[$unitAIndex]->setRandomTimePeriod();
+
+        return $this->cutBranches[$unitAIndex];
     }
 
     public function processRandomUnit($fixIterations = 1)
     {
         // Pick a random unit A
-        $unitAIndex = rand(1, (count($this->cutBranches)));
+        $unitA = $this->pickUnitA();
 
-        $unitA = $this->cutBranches[$unitAIndex];
-
-        echo 'Picked: ' . $unitAIndex . "\n";
-        echo 'Volume before: ' . $this->getTotalVolume() . "\n";
+        //echo 'Picked: ' . $unitA->getId() . "\n";
+        //echo 'Volume before: ' . $this->getTotalVolume() . "\n";
 
         // Get violations
         $violations = $this->getViolations($unitA);
@@ -239,12 +330,12 @@ class Runner
         throw new Exception('Out of ideas');
     }
 
-    protected function getViolations(Branch $except)
+    protected function getViolations(Branch $except = null)
     {
         $violations = [];
 
         foreach ($this->cutBranches as $cutBranch) {
-            if ($cutBranch == $except) {
+            if (!is_null($cutBranch) && $cutBranch == $except) {
                 continue;
             }
 

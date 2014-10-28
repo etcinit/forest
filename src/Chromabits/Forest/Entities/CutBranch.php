@@ -110,8 +110,10 @@ class CutBranch extends Branch
     {
         $options = [1, 2, 3];
 
-        if (count($this->neighbors) > 2) {
-            $options = array_diff($options, [$this->timePeriod]);
+        if (count($this->neighbors) == 1) {
+            //$options = array_diff($options, [$this->timePeriod]);
+            $this->pickBestIfLeaf();
+            return;
         } else {
             foreach ($this->neighbors as $neighbor) {
                 $options = array_diff($options, [$neighbor->getTimePeriod()]);
@@ -130,8 +132,46 @@ class CutBranch extends Branch
         // Set time period
         $optionsCount = count($options);
         if ($optionsCount == 0) {
-            $options = array_diff([1, 2, 3], [$this->timePeriod]);
-            $optionsCount = count($options);
+            $closestNeighbor = null;
+            $closestNeighborDistance = -1;
+
+            /** @var CutBranch $neighbor */
+            foreach ($this->neighbors as $neighbor) {
+                $neighborDistance = $neighbor->distanceTo(null, $unitA);
+
+                if ($closestNeighborDistance == -1 || $closestNeighborDistance > $neighborDistance) {
+                    $closestNeighbor = $neighbor;
+                    $closestNeighborDistance = $neighborDistance;
+                }
+            }
+
+            switch ($closestNeighbor->getTimePeriod()) {
+                case 1:
+                    if ($this->tp2Vol > $this->tp3Vol) {
+                        $this->timePeriod = 2;
+                    } else {
+                        $this->timePeriod = 3;
+                    }
+                    break;
+                case 2:
+                    if ($this->tp1Vol > $this->tp3Vol) {
+                        $this->timePeriod = 1;
+                    } else {
+                        $this->timePeriod = 3;
+                    }
+                    break;
+                case 3:
+                    if ($this->tp2Vol > $this->tp1Vol) {
+                        $this->timePeriod = 2;
+                    } else {
+                        $this->timePeriod = 1;
+                    }
+                    break;
+            }
+
+            return;
+            //$options = array_diff([1, 2, 3], [$this->timePeriod]);
+            //$optionsCount = count($options);
         }
 
         $options = array_values($options);
@@ -153,5 +193,42 @@ class CutBranch extends Branch
         );
 
         return $cutBranch;
+    }
+
+    public function setRandomTimePeriod()
+    {
+        $this->timePeriod = rand(1,3);
+    }
+
+    public function pickBestIfLeaf()
+    {
+        if (count($this->neighbors) == 1) {
+            // Get other neighbors tp
+            $neighborTp = array_values($this->neighbors)[0]->getTimePeriod();
+
+            switch ($neighborTp) {
+                case 1:
+                    if ($this->tp2Vol > $this->tp3Vol) {
+                        $this->timePeriod = 2;
+                    } else {
+                        $this->timePeriod = 3;
+                    }
+                    break;
+                case 2:
+                    if ($this->tp1Vol > $this->tp3Vol) {
+                        $this->timePeriod = 1;
+                    } else {
+                        $this->timePeriod = 3;
+                    }
+                    break;
+                case 3:
+                    if ($this->tp2Vol > $this->tp1Vol) {
+                        $this->timePeriod = 2;
+                    } else {
+                        $this->timePeriod = 1;
+                    }
+                    break;
+            }
+        }
     }
 } 
